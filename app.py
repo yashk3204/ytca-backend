@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
@@ -12,12 +12,15 @@ from nltk.sentiment import SentimentIntensityAnalyzer
 nltk.download('vader_lexicon')
 import os
 from dotenv import load_dotenv
+import requests
 
 load_dotenv()
-API_KEY = os.getenv("YOUTUBE_API_KEY")
-youtube = build('youtube', 'v3', developerKey=API_KEY)
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+youtube = build('youtube', 'v3', developerKey=YOUTUBE_API_KEY)
 sia = SentimentIntensityAnalyzer()
 english_stopwords = set(stopwords.words('english'))
+
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 
 def get_results(video_id, max_comments=100):
     comments = []
@@ -71,6 +74,50 @@ def get_sentiment(comment):
         return 'Negative'
     else:
         return 'Neutral'
+    
+def getSummary(comments, isPositive, title, channel):
+    sentiment = "positive" if isPositive else "negative"
+    prompt = (f"Summarize the following {sentiment} comments from the YouTube video \"{title}\" by \"{channel}\":" + "\n".join(f"- {c}" for c in comments[:30]))
+    url = "https://api.perplexity.ai/chat/completions"
+
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "sonar-pro",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant that summarizes YouTube comments."}, 
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 500,
+        "temperature": 0.7
+    }
+
+    response = requests.post(url, headers=headers, json=payload)
+    if response.status_code == 200:
+        return response.json()["choices"][0]["message"]["content"]
+    else:
+        raise Exception(f"Error from Perplexity: {response.text}")
+
+# import matplotlib.pyplot as plt
+# from collections import Counter
+
+# def plot_sentiments(sentiments):
+#     sent_counts = Counter(sentiments)
+#     labels = ['Positive', 'Neutral', 'Negative']
+#     values = [sent_counts.get(label, 0) for label in labels]
+
+#     plt.figure(figsize=(6, 4))
+#     plt.bar(labels, values, color=['green', 'gray', 'red'])
+#     plt.title("Sentiment Distribution")
+#     plt.ylabel("Number of Comments")
+#     plt.tight_layout()
+#     os.makedirs('static', exist_ok=True)
+#     chart_path = os.path.join('static', 'sentiment_plot.png')
+#     plt.savefig(chart_path)
+#     plt.close()
+#     return chart_path
 
 @app.route("/analyze", methods=["POST"])
 
@@ -99,6 +146,29 @@ def analyze():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+@app.route("/summarize", methods=["POST"])
+
+def summarize():
+    data = request.get_json()
+    posComments = data.get("positive_comments", [])
+    negComments = data.get("negative_comments", [])
+    title = data.get("title")
+    channel = data.get("channel")
+
+    try:
+        posSummary = getSummary(posComments, True, title, channel)
+    except Exception as e:
+        posSummary = f"Error summarizing positive comments: {e}"
+    try:
+        negSummary = getSummary(negComments, False, title, channel)
+    except Exception as e:
+        negSummary = f"Error summarizing negative comments: {e}"
+
+    return jsonify({
+        "positiveSummary": posSummary,
+        "negativeSummary": negSummary
+    })
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="localhost", port=5000, debug=True)
