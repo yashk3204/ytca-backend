@@ -76,6 +76,8 @@ def get_sentiment(comment):
         return 'Neutral'
     
 def getSummary(comments, isPositive, title, channel):
+    if len(comments) == 0:
+        return ""
     sentiment = "positive" if isPositive else "negative"
     prompt = (f"Summarize the following {sentiment} comments from the YouTube video \"{title}\" by \"{channel}\":" + "\n".join(f"- {c}" for c in comments[:30]))
     url = "https://api.perplexity.ai/chat/completions"
