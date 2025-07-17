@@ -45,7 +45,8 @@ def get_results(video_id, max_comments=100):
             videoId=video_id,
             maxResults=min(100, max_comments - len(comments)),
             pageToken=next_page_token,
-            textFormat="plainText"
+            textFormat="plainText",
+            order="relevance" # to get top comments instead of newest comments
         ).execute()
 
         for item in response["items"]:
